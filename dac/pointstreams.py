@@ -1,3 +1,5 @@
+# Based on code from: https://github.com/j4cbo/j4cDAC/blob/master/tools/tester/talk.py
+
 import dac
 from dac import Point
 
