@@ -4,13 +4,15 @@ from itertools import combinations
 
 from leapyosc import client
 from leapyosc.client import (BaseLeapListener, RealPartTrackerMixin, 
-                    BundledMixin, OSCLeapListener)
+                    BundledMixin, LinearScalingMixin, OSCLeapListener)
 
 import Leap
 
 
 CMAX = 65535
 PMAX = 32600
+H_PMAX = 19348
+H_PMIN = -19348
 PSTEP = 200
 
 
@@ -126,19 +128,28 @@ class ScenePointStream(object):
 
 
 class ColorfulSquarePointStream(object):
+    pmax = 32600
+    pstep = 200
+    cmax = 65535
+
+    hmax = 32600
+    wmax = 32600
+
     def produce(self):
-        pmax = 32600
-        pstep = 200
-        cmax = 65535
+        pmax = self.pmax
+        pstep = self.pstep
+        cmax = self.cmax
+        wmax = self.wmax
+        hmax = self.hmax
         while True:
-            for x in xrange(-pmax, pmax, pstep):
-                yield (x, pmax, cmax, 0, 0)
-            for y in xrange(pmax, -pmax, -pstep):
-                yield (pmax, y, 0, cmax, 0)
-            for x in xrange(pmax, -pmax, -pstep):
-                yield (x, -pmax, 0, 0, cmax)
-            for y in xrange(-pmax, pmax, pstep):
-                yield (-pmax, y, cmax, cmax, cmax)
+            for x in xrange(-wmax, wmax, pstep):
+                yield (x, hmax, cmax, 0, 0)
+            for y in xrange(hmax, -hmax, -pstep):
+                yield (wmax, y, 0, cmax, 0)
+            for x in xrange(wmax, -wmax, -pstep):
+                yield (x, -hmax, 0, 0, cmax)
+            for y in xrange(-hmax, hmax, pstep):
+                yield (-wmax, y, cmax, cmax, cmax)
 
     def __init__(self):
         self.stream = self.produce()
@@ -147,19 +158,25 @@ class ColorfulSquarePointStream(object):
         return [self.stream.next() for i in xrange(n)]
 
 
+
+
+
 class NullPointStream(object):
     def read(self, n):
         return [(0, 0, 0, 0, 0)] * n
 
 
 
-class PointStreamingLeapListener(RealPartTrackerMixin, BundledMixin, OSCLeapListener):
+class PointStreamingLeapListener(RealPartTrackerMixin, 
+                                    BundledMixin, 
+                                    LinearScalingMixin, 
+                                    OSCLeapListener):
 
     # class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
 
     def __init__(self,*args,**kwargs):
-        self.x_scale = 210
-        self.y_scale = 180
+        self.x_scale = 300
+        self.y_scale = 200
         super(PointStreamingLeapListener,self).__init__(*args,**kwargs)
         self.points = {}
         self.starter_points = {}
@@ -216,13 +233,13 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BundledMixin, OSCLeapList
         else:
             x = min(x, PMAX)
 
-        y -= 100 # Because we dont have negatives in y from leap
+        y -= 200 # Because we dont have negatives in y from leap
         y = y*self.y_scale # Scale but dont exceed max
         y = y - (y % 10)
         if y < 0:
-            y = max(y, -PMAX)
+            y = max(y, H_PMIN)
         else:
-            y = min(y, PMAX)
+            y = min(y, H_PMAX)
 
         laser_point = (x, y)
         laser_point += (r,g,b)
@@ -248,6 +265,9 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BundledMixin, OSCLeapList
 
     def post_filter(self, points):
         return points
+
+
+    #def produce(self)
 
     def read(self, n):
         points = []
@@ -319,7 +339,10 @@ def osc_enabled(hostname='localhost', port=6678):
     #scene.add_shape(Rect(PMAX/2,1000,width=PMAX/2,height=PMAX/4))
     #scene.add_shape(Rect(0,0,width=PMAX/6,height=PMAX/6, rgb=(CMAX,1000,10000)))
 
-    listener = PointStreamingLeapListener(hostname=hostname, port=port)
+    listener = PointStreamingLeapListener(hostname=hostname, port=port,
+                    x_mm_min=-100, x_mm_max=100,
+                    y_mm_min=100, y_mm_max=300
+                    )
     controller = Leap.Controller()
     controller.add_listener(listener)
     try:
@@ -333,9 +356,15 @@ def osc_enabled(hostname='localhost', port=6678):
         controller.remove_listener(listener)
 
 
+def max_box():
+    d = dac.DAC(dac.find_first_dac())
+    box = ColorfulSquarePointStream()
+    box.hmax = 19348
+    d.play_stream(box)
+
 
 if __name__ == '__main__':
 
-    osc_enabled('192.168.1.3', 6678)
-
+    osc_enabled('169.254.74.5',6678)
+    #max_box()
 
