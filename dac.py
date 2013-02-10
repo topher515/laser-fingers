@@ -192,9 +192,9 @@ class DAC(object):
                 cap += 150
 
             # print "Writing %d points" % (cap, )
-            t0 = time.time()
+            #t0 = time.time()
             self.write(points)
-            t1 = time.time()
+            #t1 = time.time()
 #           print "Took %f" % (t1 - t0, )
 
             if not started:
