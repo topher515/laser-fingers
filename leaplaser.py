@@ -1,8 +1,10 @@
 # Based on code from: https://github.com/j4cbo/j4cDAC/blob/master/tools/tester/talk.py
 import dac
+from itertools import combinations
 
 from leapyosc import client
-from leapyosc.client import BaseLeapListener, RealPartTrackerMixin
+from leapyosc.client import (BaseLeapListener, RealPartTrackerMixin, 
+                    BundledMixin, OSCLeapListener)
 
 import Leap
 
@@ -10,6 +12,19 @@ import Leap
 CMAX = 65535
 PMAX = 32600
 PSTEP = 200
+
+
+def make_line(pt1, pt2, steps=200, r=CMAX, g=CMAX, b=CMAX):
+    xdiff = pt1[0] - pt2[0]
+    ydiff = pt1[1] - pt2[1]
+    line = []
+    for i in xrange(0, steps, 1):
+        j = float(i)/steps
+        x = pt1[0] - (xdiff * j)
+        y = pt1[1] - (ydiff * j)
+        line.append((x, y, r, g, b)) # XXX FIX COLORS
+    return line
+
 
 
 def log(msg):
@@ -138,13 +153,13 @@ class NullPointStream(object):
 
 
 
+class PointStreamingLeapListener(RealPartTrackerMixin, BundledMixin, OSCLeapListener):
 
-
-class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
+    # class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
 
     def __init__(self,*args,**kwargs):
-        self.x_scale = 150
-        self.y_scale = 140
+        self.x_scale = 210
+        self.y_scale = 180
         super(PointStreamingLeapListener,self).__init__(*args,**kwargs)
         self.points = {}
         self.starter_points = {}
@@ -152,7 +167,7 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
         self.first_seen = {}
         self.frame_count = 0
 
-    def on_frame(self,controller):
+    def on_frame(self, controller):
         self.frame_count += 1
         super(PointStreamingLeapListener,self).on_frame(controller)
         frame = controller.frame()
@@ -193,11 +208,22 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
 
 
     def build_point(self, x, y, r=CMAX, g=CMAX, b=CMAX):
-        x = -min(x*self.x_scale, PMAX) # Scale but dont exceed max
+        x = -x*self.x_scale # Scale but dont exceed max
         x = x - (x % 10)
+        x = min(x, PMAX)
+        if x < 0:
+            x = max(x, -PMAX)
+        else:
+            x = min(x, PMAX)
+
         y -= 100 # Because we dont have negatives in y from leap
-        y = min(y*self.y_scale, PMAX) # Scale but dont exceed max
+        y = y*self.y_scale # Scale but dont exceed max
         y = y - (y % 10)
+        if y < 0:
+            y = max(y, -PMAX)
+        else:
+            y = min(y, PMAX)
+
         laser_point = (x, y)
         laser_point += (r,g,b)
         return laser_point
@@ -220,6 +246,9 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
         return points
 
 
+    def post_filter(self, points):
+        return points
+
     def read(self, n):
         points = []
 
@@ -228,26 +257,41 @@ class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
         if pt_count == 0:
             return [self.build_point(0,0,r=0,g=0,b=0)] * n
 
-        m = n / pt_count
 
-        INSTR_MAX = 2
-
-        for point in self.points.values():
-            if m > INSTR_MAX:
-                rendered = INSTR_MAX
-                blank = m - INSTR_MAX
-            else:
-                rendered = m
-                blank = 0
-
-            points += [self.build_point(point[0], point[1])] * rendered
-            points += [self.build_point(point[0], point[1],r=0,g=0,b=0)] * blank
-
-        #print points
-        return points
+        combos = [] #c for c in combinations(self.points.values(), 2)]
+        
+        if len(combos) > 0:
+            i = 0
+            m = n / len(combos)
+            for p1,p2 in combos:
+                i += m
+                points += make_line(p1,p2,steps=m)
+            points += [self.build_point(0,0,0,0,0)] * (n - i)
 
 
-if __name__ == '__main__':
+        else:
+            m = n / pt_count
+
+            INSTR_MAX = 2
+
+            for point in self.points.values():
+                if m > INSTR_MAX:
+                    rendered = INSTR_MAX
+                    blank = m - INSTR_MAX
+                else:
+                    rendered = m
+                    blank = 0
+
+                points += [self.build_point(point[0], point[1])] * rendered
+                points += [self.build_point(point[0], point[1],r=0,g=0,b=0)] * blank
+
+            #print points
+
+        return self.post_filter(points)
+
+
+
+def main():
     d = dac.DAC(dac.find_first_dac())
     #d.play_stream(ColorfulSquarePointStream())
     #scene = ScenePointStream(max_points=500)
@@ -267,5 +311,31 @@ if __name__ == '__main__':
     finally:
         controller.remove_listener(listener)
 
+
+def osc_enabled(hostname='localhost', port=6678):
+    d = dac.DAC(dac.find_first_dac())
+    #d.play_stream(ColorfulSquarePointStream())
+    #scene = ScenePointStream(max_points=500)
+    #scene.add_shape(Rect(PMAX/2,1000,width=PMAX/2,height=PMAX/4))
+    #scene.add_shape(Rect(0,0,width=PMAX/6,height=PMAX/6, rgb=(CMAX,1000,10000)))
+
+    listener = PointStreamingLeapListener(hostname=hostname, port=port)
+    controller = Leap.Controller()
+    controller.add_listener(listener)
+    try:
+        d.play_stream(listener)
+
+    #log("Press Enter to quit...")
+    #sys.stdin.readline()
+    # Keep this process running until Enter is pressed
+    #log("Removing listener...")
+    finally:
+        controller.remove_listener(listener)
+
+
+
+if __name__ == '__main__':
+
+    osc_enabled('192.168.1.3', 6678)
 
 
