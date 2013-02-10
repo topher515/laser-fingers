@@ -1,28 +1,35 @@
-# Base on code from https://github.com/j4cbo/j4cDAC/blob/master/tools/tester/talk.py
+# j4cDAC test code
+#
+# Copyright 2011 Jacob Potter
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 3.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import socket
 import time
 import struct
 
-from collections import namedtuple
+def pack_point(x, y, r, g, b, i = -1, u1 = 0, u2 = 0, flags = 0):
+    """Pack some color values into a struct dac_point.
 
-
-class Point(namedtuple('Point', ['x','y','r','g','b'], verbose=True)):
-
-    def pack(self, i = -1, u1 = 0, u2 = 0, flags = 0):
-        """Pack some color values into a struct dac_point.
-
-        Values must be specified for x, y, r, g, and b. If a value is not
-        passed in for the other fields, i will default to max(r, g, b); the 
-        rest default to zero.
-        """
-        
-        if i < 0:
-            i = max(self.r, self.g, self.b)
-
-        return struct.pack("<HhhHHHHHH", flags, self.x, self.y, 
-                self.r, self.g, self.b, i, u1, u2)
+    Values must be specified for x, y, r, g, and b. If a value is not
+    passed in for the other fields, i will default to max(r, g, b); the 
+    rest default to zero.
+    """
     
+    if i < 0:
+        i = max(r, g, b)
+
+    return struct.pack("<HhhHHHHHH", flags, x, y, r, g, b, i, u1, u2)
 
 
 class ProtocolError(Exception):
@@ -166,7 +173,6 @@ class DAC(object):
         self.conn.sendall("?")
         return self.readresp("?")
 
-
     def play_stream(self, stream):
         # First, prepare the stream
         if self.last_status.playback_state == 2:
@@ -179,14 +185,13 @@ class DAC(object):
         while True:
             # How much room?
             cap = 1799 - self.last_status.fullness
-            
-            points = [stream.next() for x in xrange(cap)]
+            points = stream.read(cap)
 
             if cap < 100:
                 time.sleep(0.005)
                 cap += 150
 
-#           print "Writing %d points" % (cap, )
+            # print "Writing %d points" % (cap, )
             t0 = time.time()
             self.write(points)
             t1 = time.time()

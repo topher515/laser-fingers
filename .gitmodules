@@ -1,0 +1,3 @@
+[submodule "leapyosc"]
+	path = leapyosc
+	url = git@github.com:topher515/leapyosc.git
