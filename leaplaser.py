@@ -9,6 +9,7 @@ from leapyosc.client import (BaseLeapListener, RealPartTrackerMixin,
 import Leap
 
 from pointstream import PointStream
+from entities.ship import Ship
 
 
 CMAX = 65535
@@ -159,14 +160,12 @@ class NullPointStream(object):
 
 
 
-class PointStreamingMixin(object):
-
-    # class PointStreamingLeapListener(RealPartTrackerMixin, BaseLeapListener):
+class PointExtractionMixin(object):
 
     def __init__(self,*args,**kwargs):
         self.x_scale = 300
         self.y_scale = 200
-        super(PointStreamingMixin,self).__init__(*args,**kwargs)
+        super(PointExtractionMixin,self).__init__(*args,**kwargs)
         self.points = {}
         self.starter_points = {}
         self.last_seen = {}
@@ -176,12 +175,29 @@ class PointStreamingMixin(object):
         self.pt_timein = 12   # In frames
         self.pt_timeout = 5   # In frames
 
+
+    def pre_extract_points(self, frame):
+        pass
+
+    def post_extract_points(self, frame):
+        pass
+
+
+    def new_point(self, key, point):
+        pass
+
+    def lost_point(self, key):
+        pass
+
     def on_frame(self, controller):
         self.frame_count += 1
-        super(PointStreamingMixin,self).on_frame(controller)
+        super(PointExtractionMixin,self).on_frame(controller)
         frame = controller.frame()
+        self.pre_extract_points(frame)
+        self.extract_points(frame)
+        self.post_extract_points(frame)
 
-        #new_keys = set()
+    def extract_points(self, frame):
         for hand in self.get_hands(frame):
             for finger in hand.fingers:
                 t = finger.tip_position
@@ -191,20 +207,23 @@ class PointStreamingMixin(object):
                 #new_keys.add(key)
                 if not self.first_seen.get(key):
                     self.first_seen[key] = self.frame_count
-                self.starter_points[key] = (t[0], t[1])
+                self.starter_points[key] = self.scale_pt(t[0], t[1])
                 self.last_seen[key] = self.frame_count
 
         # Select valid new points
         for key,frame in self.first_seen.iteritems():
             if self.frame_count - frame > self.pt_timein:
-                self.points[key] = self.starter_points[key]
+                pt = self.starter_points[key]
+                if not self.points.get(key):
+                    self.new_point(key, pt)
+                self.points[key] = pt
 
         # Get rid of old points
         old_keys = []
         for key,frame in self.last_seen.iteritems():
             if self.frame_count - frame > self.pt_timeout:
                 old_keys.append(key)
-
+                
         def del_key(dct,key):
             try:
                 del dct[key]
@@ -214,8 +233,44 @@ class PointStreamingMixin(object):
         for key in old_keys:
             del_key(self.first_seen, key)
             del_key(self.starter_points, key)
-            del_key(self.points, key)
+            if self.points.get(key):
+                del_key(self.points, key)
+                self.lost_point(key)
             del_key(self.last_seen, key)
+
+
+    def build_point(self, x, y, r=CMAX, g=CMAX, b=CMAX):
+        return self.scale_pt(x,y) + (r,g,b)
+
+    def scale_pt(self, x, y):
+        x = -x * self.x_scale # Scale but dont exceed max
+        x = x - (x % 10)
+        x = min(x, PMAX)
+
+
+        y -= 200  # Because we dont have negatives in y from leap
+        y = y * self.y_scale  # Scale but dont exceed max
+        y = y - (y % 10)
+
+        laser_point = self.safe_pt(x, y)
+        #laser_point += (r,g,b)
+        return laser_point
+
+
+    def safe_pt(self, x, y):
+        if x < 0:
+            x = max(x, -PMAX)
+        else:
+            x = min(x, PMAX)
+
+        if y < 0:
+            y = max(y, H_PMIN)
+        else:
+            y = min(y, H_PMAX)
+        return x,y
+
+
+class LightningHands(PointExtractionMixin):
 
 
     def make_line(self, pt1, pt2, steps=200, rgb_start=None, rgb_end=None):
@@ -241,29 +296,6 @@ class PointStreamingMixin(object):
             b = rgb_start[2] - (bdiff * j)
             line.append(self.build_point(x,y,r,g,b)) 
         return line
-
-
-    def build_point(self, x, y, r=CMAX, g=CMAX, b=CMAX):
-        x = -x * self.x_scale # Scale but dont exceed max
-        x = x - (x % 10)
-        x = min(x, PMAX)
-        if x < 0:
-            x = max(x, -PMAX)
-        else:
-            x = min(x, PMAX)
-
-        y -= 200  # Because we dont have negatives in y from leap
-        y = y * self.y_scale  # Scale but dont exceed max
-        y = y - (y % 10)
-        if y < 0:
-            y = max(y, H_PMIN)
-        else:
-            y = min(y, H_PMAX)
-
-        laser_point = (x, y)
-        laser_point += (r,g,b)
-        return laser_point
-
 
 
     def read(self, n):
@@ -309,16 +341,49 @@ class PointStreamingMixin(object):
         return points
 
 
-class PointStreamingOSCLeapListener(PointStreamingMixin,
+class AsteroidInspired(PointExtractionMixin):
+
+
+    def __init__(self, *args,**kwargs):
+        self.ps = PointStream()
+        self.ships = {}
+        super(AsteroidInspired, self).__init__(*args,**kwargs)
+
+
+    def post_extract_points(self, frame):
+        print self.points
+        print self.ps.objects
+        for key, point in self.points.iteritems():
+            s = self.ships[key]
+            s.x = point[0]
+            s.y = point[1]
+
+    def new_point(self, key, pt):
+        s = Ship(pt[0], pt[1], r=CMAX/2, g=CMAX/4, b=CMAX/4)
+        s.theta = 0.5
+        self.ships[key] = s
+        self.ps.objects.append(s)
+
+    def lost_point(self, key):
+        s = self.ships[key]
+        del self.ships[key]
+        s.destroy = True
+
+
+    def read(self, n):
+        return [self.safe_pt(x,y) + (r,g,b) for x,y,r,g,b in self.ps.read(n)]
+
+
+class PointStreamingOSCLeapListener(LightningHands,
                                     RealPartTrackerMixin, 
                                     BundledMixin, 
                                     LinearScalingMixin, 
                                     OSCLeapListener):
     pass
 
-class PointStreamingLeapListener(PointStreamingMixin,
+class PointStreamingLeapListener(AsteroidInspired,
                             RealPartTrackerMixin,
-                            LinearScalingMixin, 
+                            LinearScalingMixin,
                             BaseLeapListener):
     pass
 
@@ -326,14 +391,22 @@ class PointStreamingLeapListener(PointStreamingMixin,
 
 
 def main():
-    d = dac.DAC(dac.find_first_dac())
 
     listener = PointStreamingLeapListener(x_mm_min=-100, x_mm_max=100,
                     y_mm_min=100, y_mm_max=300)
+
     controller = Leap.Controller()
     controller.add_listener(listener)
     try:
-        d.play_stream(listener)
+
+        while True:
+
+            d = dac.DAC(dac.find_first_dac())
+            try:
+                d.play_stream(listener)
+            except Exception as e:
+                print e
+
     finally:
         controller.remove_listener(listener)
 
@@ -369,8 +442,12 @@ def max_box():
 
 
 def asteroids_test():
+    from entities.ship import Ship
     d = dac.DAC(dac.find_first_dac())
     box = PointStream()
+    s = Ship(0, 0, CMAX/2, CMAX/2, CMAX/2)
+    s.theta = 0.5
+    box.objects.append(s)
     d.play_stream(box)
 
 
@@ -379,4 +456,4 @@ if __name__ == '__main__':
     #osc_enabled('169.254.74.5',6678)
     #max_box()
     main()
-
+    #asteroids_test()
