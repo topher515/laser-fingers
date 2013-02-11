@@ -10,6 +10,9 @@ import Leap
 
 from pointstream import PointStream
 from entities.ship import Ship
+from entities.particle import Particle
+from entities.asteroid import Asteroid
+from entities.wave import Wave
 
 
 CMAX = 65535
@@ -17,8 +20,6 @@ PMAX = 32600
 H_PMAX = 19348
 H_PMIN = -19348
 PSTEP = 200
-
-
 
 
 
@@ -341,8 +342,7 @@ class LightningHands(PointExtractionMixin):
         return points
 
 
-class AsteroidInspired(PointExtractionMixin):
-
+class Asteroids(PointExtractionMixin):
 
     def __init__(self, *args,**kwargs):
         self.ps = PointStream()
@@ -351,15 +351,15 @@ class AsteroidInspired(PointExtractionMixin):
 
 
     def post_extract_points(self, frame):
-        print self.points
-        print self.ps.objects
+        if self.points:
+            print self.points
         for key, point in self.points.iteritems():
             s = self.ships[key]
             s.x = point[0]
             s.y = point[1]
 
     def new_point(self, key, pt):
-        s = Ship(pt[0], pt[1], r=CMAX/2, g=CMAX/4, b=CMAX/4)
+        s = Asteroid(pt[0], pt[1], r=CMAX/2, g=CMAX/4, b=CMAX/4)
         s.theta = 0.5
         self.ships[key] = s
         self.ps.objects.append(s)
@@ -374,14 +374,46 @@ class AsteroidInspired(PointExtractionMixin):
         return [self.safe_pt(x,y) + (r,g,b) for x,y,r,g,b in self.ps.read(n)]
 
 
-class PointStreamingOSCLeapListener(LightningHands,
+
+class WaveStream(PointExtractionMixin):
+
+    def __init__(self, *args,**kwargs):
+        self.ps = PointStream()
+        self.wave = Wave(0,0, r=CMAX/2, g=CMAX/4, b=CMAX/4)
+        self.ps.objects.append(self.wave)
+        super(WaveStream, self).__init__(*args,**kwargs)
+
+
+    def post_extract_points(self, frame):
+        # if self.points:
+        #     print self.points
+        # for key, point in self.points.iteritems():
+        #     s = self.ships[key]
+        #     s.x = point[0]
+        #     s.y = point[1]
+        self.wave.key_points = self.points.values()
+
+    def new_point(self, key, pt):
+        pass
+
+    def lost_point(self, key):
+        pass
+
+
+    def read(self, n):
+        return [self.safe_pt(x,y) + (r,g,b) for x,y,r,g,b in self.ps.read(n)]
+
+
+
+
+class PointStreamingOSCLeapListener(Asteroids,
                                     RealPartTrackerMixin, 
                                     BundledMixin, 
                                     LinearScalingMixin, 
                                     OSCLeapListener):
     pass
 
-class PointStreamingLeapListener(AsteroidInspired,
+class PointStreamingLeapListener(WaveStream,
                             RealPartTrackerMixin,
                             LinearScalingMixin,
                             BaseLeapListener):
@@ -389,10 +421,21 @@ class PointStreamingLeapListener(AsteroidInspired,
 
 
 
+OSC = False
+
 
 def main():
 
-    listener = PointStreamingLeapListener(x_mm_min=-100, x_mm_max=100,
+    if OSC:
+        hostname='169.254.74.5'
+        port=6678
+        listener = PointStreamingOSCLeapListener(hostname=hostname, port=port,
+                    x_mm_min=-100, x_mm_max=100,
+                    y_mm_min=100, y_mm_max=300)
+
+    else:
+
+        listener = PointStreamingLeapListener(x_mm_min=-100, x_mm_max=100,
                     y_mm_min=100, y_mm_max=300)
 
     controller = Leap.Controller()
@@ -410,28 +453,6 @@ def main():
     finally:
         controller.remove_listener(listener)
 
-
-def osc_enabled(hostname='localhost', port=6678):
-    d = dac.DAC(dac.find_first_dac())
-    #d.play_stream(ColorfulSquarePointStream())
-    #scene = ScenePointStream(max_points=500)
-    #scene.add_shape(Rect(PMAX/2,1000,width=PMAX/2,height=PMAX/4))
-    #scene.add_shape(Rect(0,0,width=PMAX/6,height=PMAX/6, rgb=(CMAX,1000,10000)))
-
-    listener = PointStreamingOSCLeapListener(hostname=hostname, port=port,
-                    x_mm_min=-100, x_mm_max=100,
-                    y_mm_min=100, y_mm_max=300)
-    controller = Leap.Controller()
-    controller.add_listener(listener)
-    try:
-        d.play_stream(listener)
-
-    #log("Press Enter to quit...")
-    #sys.stdin.readline()
-    # Keep this process running until Enter is pressed
-    #log("Removing listener...")
-    finally:
-        controller.remove_listener(listener)
 
 
 def max_box():
@@ -453,7 +474,6 @@ def asteroids_test():
 
 if __name__ == '__main__':
 
-    #osc_enabled('169.254.74.5',6678)
     #max_box()
     main()
     #asteroids_test()
