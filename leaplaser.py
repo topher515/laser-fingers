@@ -183,6 +183,9 @@ class PointStreamingMixin(object):
         self.first_seen = {}
         self.frame_count = 0
 
+        self.pt_timein = 12   # In frames
+        self.pt_timeout = 5   # In frames
+
     def on_frame(self, controller):
         self.frame_count += 1
         super(PointStreamingMixin,self).on_frame(controller)
@@ -192,22 +195,24 @@ class PointStreamingMixin(object):
         for hand in self.get_hands(frame):
             for finger in hand.fingers:
                 t = finger.tip_position
+                if finger.zeroed:
+                    continue
                 key = "%s:%s" % (hand.id, finger.id)
                 #new_keys.add(key)
                 if not self.first_seen.get(key):
                     self.first_seen[key] = self.frame_count
-                self.starter_points[key] = t[0], t[1]
+                self.starter_points[key] = (t[0], t[1])
                 self.last_seen[key] = self.frame_count
 
         # Select valid new points
         for key,frame in self.first_seen.iteritems():
-            if self.frame_count - frame > 10:
+            if self.frame_count - frame > self.pt_timein:
                 self.points[key] = self.starter_points[key]
 
         # Get rid of old points
         old_keys = []
         for key,frame in self.last_seen.iteritems():
-            if self.frame_count - frame > 10:
+            if self.frame_count - frame > self.pt_timeout:
                 old_keys.append(key)
 
         def del_key(dct,key):
@@ -279,10 +284,19 @@ class PointStreamingMixin(object):
                     rendered = m
                     blank = 0
 
-                points += [self.build_point(point[0], point[1])] * rendered
+                to_render_pt = self.build_point(point[0], point[1])
+
+                #if to_render_pt[0] == -0.0 and to_render_pt[1] == H_PMIN:
+                #    rendered = 0    
+                #    blank = m
+                #    print point
+                if abs(to_render_pt[0]) == 0:
+                    print to_render_pt
+                    print self.points
+                
+                points += [to_render_pt] * rendered
                 points += [self.build_point(point[0], point[1],r=0,g=0,b=0)] * blank
 
-            #print points
 
         return points
 
@@ -325,8 +339,7 @@ def osc_enabled(hostname='localhost', port=6678):
 
     listener = PointStreamingOSCLeapListener(hostname=hostname, port=port,
                     x_mm_min=-100, x_mm_max=100,
-                    y_mm_min=100, y_mm_max=300
-                    )
+                    y_mm_min=100, y_mm_max=300)
     controller = Leap.Controller()
     controller.add_listener(listener)
     try:
