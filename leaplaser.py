@@ -1,6 +1,7 @@
 # Based on code from: https://github.com/j4cbo/j4cDAC/blob/master/tools/tester/talk.py
 import dac
 from itertools import combinations
+import math
 
 from leapyosc import client
 from leapyosc.client import (BaseLeapListener, RealPartTrackerMixin, 
@@ -168,6 +169,7 @@ class PointExtractionMixin(object):
         self.y_scale = 200
         super(PointExtractionMixin,self).__init__(*args,**kwargs)
         self.points = {}
+        self.points_3d = {}
         self.starter_points = {}
         self.last_seen = {}
         self.first_seen = {}
@@ -182,7 +184,6 @@ class PointExtractionMixin(object):
 
     def post_extract_points(self, frame):
         pass
-
 
     def new_point(self, key, point):
         pass
@@ -208,16 +209,18 @@ class PointExtractionMixin(object):
                 #new_keys.add(key)
                 if not self.first_seen.get(key):
                     self.first_seen[key] = self.frame_count
-                self.starter_points[key] = self.scale_pt(t[0], t[1])
+                self.starter_points[key] = t[0], t[1], t[2]
                 self.last_seen[key] = self.frame_count
 
         # Select valid new points
         for key,frame in self.first_seen.iteritems():
             if self.frame_count - frame > self.pt_timein:
-                pt = self.starter_points[key]
+                pt3 = self.starter_points[key]
+                pt2 = self.scale_pt(pt3[0],pt3[1])
                 if not self.points.get(key):
-                    self.new_point(key, pt)
-                self.points[key] = pt
+                    self.new_point(key, pt2)
+                self.points[key] = pt2
+                self.points_3d[key] = pt3
 
         # Get rid of old points
         old_keys = []
@@ -236,6 +239,7 @@ class PointExtractionMixin(object):
             del_key(self.starter_points, key)
             if self.points.get(key):
                 del_key(self.points, key)
+                del_key(self.points_3d, key)
                 self.lost_point(key)
             del_key(self.last_seen, key)
 
@@ -347,7 +351,7 @@ class Asteroids(PointExtractionMixin):
     def __init__(self, *args,**kwargs):
         self.ps = PointStream()
         self.ships = {}
-        super(AsteroidInspired, self).__init__(*args,**kwargs)
+        super(Asteroids, self).__init__(*args,**kwargs)
 
 
     def post_extract_points(self, frame):
@@ -358,8 +362,9 @@ class Asteroids(PointExtractionMixin):
             s.x = point[0]
             s.y = point[1]
 
+
     def new_point(self, key, pt):
-        s = Asteroid(pt[0], pt[1], r=CMAX/2, g=CMAX/4, b=CMAX/4)
+        s = Particle(pt[0], pt[1], r=CMAX/2, g=CMAX/4, b=CMAX/4)
         s.theta = 0.5
         self.ships[key] = s
         self.ps.objects.append(s)
@@ -378,10 +383,19 @@ class Asteroids(PointExtractionMixin):
 class WaveStream(PointExtractionMixin):
 
     def __init__(self, *args,**kwargs):
-        self.ps = PointStream()
-        self.wave = Wave(0,0, r=CMAX/2, g=CMAX/4, b=CMAX/4)
-        self.ps.objects.append(self.wave)
         super(WaveStream, self).__init__(*args,**kwargs)
+
+        self.ps = PointStream()
+        self.wave = Wave(0,0, r=CMAX, g=CMAX, b=CMAX)
+        self.wave.anchored = True
+        self.wave.x_wave_scale = 200
+        #self.wave.step = 5000
+        self.ps.objects.append(self.wave)
+
+        self.brightness_by_z = False
+
+        self.wave_height_centered_by_z = False
+        self.wave_height_by_z = True
 
 
     def post_extract_points(self, frame):
@@ -392,6 +406,40 @@ class WaveStream(PointExtractionMixin):
         #     s.x = point[0]
         #     s.y = point[1]
         self.wave.key_points = self.points.values()
+
+        n_points = len(self.points_3d)
+        if n_points:
+            z_avg = sum([p[2] for p in self.points_3d.values()])/n_points
+
+            z_avg_abs = abs(z_avg)
+            z_avg_scaled = z_avg_abs / 150     # Distance form origin scale factor!
+            if z_avg_scaled > 1.0:
+                z_avg_scaled = 1.0
+            z_avg_scaled_centered = 1.0 - z_avg_scaled
+
+            if self.brightness_by_z:
+                _z_avg = CMAX * z_avg_scaled_centered
+                #print z_avg
+                self.wave.r = _z_avg
+                self.wave.g = _z_avg
+                self.wave.b = _z_avg
+
+            if self.wave_height_centered_by_z:
+                _z_avg1 = 2500 * z_avg_scaled_centered
+                _z_avg1 += 300
+                #self.wave.y_wave_scale = int
+                self.wave.x_wave_scale = int(_z_avg1)
+
+            if self.wave_height_by_z:
+                myz = z_avg + 200
+                if myz < 0:
+                    myz = 0
+                myz /= 400
+                myz *= 1000
+                myz + 100
+                self.wave.x_wave_scale = int(myz)
+                self.wave.y_wave_scale = int(myz*4)
+
 
     def new_point(self, key, pt):
         pass
@@ -406,7 +454,7 @@ class WaveStream(PointExtractionMixin):
 
 
 
-class PointStreamingOSCLeapListener(Asteroids,
+class PointStreamingOSCLeapListener(WaveStream,
                                     RealPartTrackerMixin, 
                                     BundledMixin, 
                                     LinearScalingMixin, 
@@ -421,7 +469,7 @@ class PointStreamingLeapListener(WaveStream,
 
 
 
-OSC = False
+OSC = True
 
 
 def main():
