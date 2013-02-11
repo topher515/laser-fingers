@@ -18,16 +18,6 @@ H_PMIN = -19348
 PSTEP = 200
 
 
-def make_line(pt1, pt2, steps=200, r=CMAX, g=CMAX, b=CMAX):
-    xdiff = pt1[0] - pt2[0]
-    ydiff = pt1[1] - pt2[1]
-    line = []
-    for i in xrange(0, steps, 1):
-        j = float(i)/steps
-        x = pt1[0] - (xdiff * j)
-        y = pt1[1] - (ydiff * j)
-        line.append((x, y, r, g, b)) # XXX FIX COLORS
-    return line
 
 
 
@@ -228,6 +218,31 @@ class PointStreamingMixin(object):
             del_key(self.last_seen, key)
 
 
+    def make_line(self, pt1, pt2, steps=200, rgb_start=None, rgb_end=None):
+
+        if rgb_start is None:
+            rgb_start = (CMAX, CMAX, CMAX)
+        if rgb_end is None:
+            rgb_end = (CMAX, CMAX, CMAX)
+
+        xdiff = pt1[0] - pt2[0]
+        ydiff = pt1[1] - pt2[1]
+        rdiff = rgb_start[0] - rgb_end[0]
+        gdiff = rgb_start[1] - rgb_end[1]
+        bdiff = rgb_start[2] - rgb_end[2]
+
+        line = []
+        for i in xrange(0, steps, 1):
+            j = float(i)/steps
+            x = pt1[0] - (xdiff * j)
+            y = pt1[1] - (ydiff * j)
+            r = rgb_start[0] - (rdiff * j)
+            g = rgb_start[1] - (gdiff * j)
+            b = rgb_start[2] - (bdiff * j)
+            line.append(self.build_point(x,y,r,g,b)) 
+        return line
+
+
     def build_point(self, x, y, r=CMAX, g=CMAX, b=CMAX):
         x = -x * self.x_scale # Scale but dont exceed max
         x = x - (x % 10)
@@ -237,8 +252,8 @@ class PointStreamingMixin(object):
         else:
             x = min(x, PMAX)
 
-        y -= 200 # Because we dont have negatives in y from leap
-        y = y * self.y_scale # Scale but dont exceed max
+        y -= 200  # Because we dont have negatives in y from leap
+        y = y * self.y_scale  # Scale but dont exceed max
         y = y - (y % 10)
         if y < 0:
             y = max(y, H_PMIN)
@@ -260,14 +275,15 @@ class PointStreamingMixin(object):
             return [self.build_point(0,0,r=0,g=0,b=0)] * n
 
 
-        combos = [] #c for c in combinations(self.points.values(), 2)]
+        combos = [c for c in combinations(self.points.values(), 2)]
         
         if len(combos) > 0:
             i = 0
             m = n / len(combos)
             for p1,p2 in combos:
+                #print p1, p2
                 i += m
-                points += make_line(p1,p2,steps=m)
+                points += self.make_line(p1,p2,steps=m, rgb_start=(CMAX,0,0), rgb_end=(0,0,CMAX))
             points += [self.build_point(0,0,0,0,0)] * (n - i)
 
 
@@ -285,14 +301,6 @@ class PointStreamingMixin(object):
                     blank = 0
 
                 to_render_pt = self.build_point(point[0], point[1])
-
-                #if to_render_pt[0] == -0.0 and to_render_pt[1] == H_PMIN:
-                #    rendered = 0    
-                #    blank = m
-                #    print point
-                if abs(to_render_pt[0]) == 0:
-                    print to_render_pt
-                    print self.points
                 
                 points += [to_render_pt] * rendered
                 points += [self.build_point(point[0], point[1],r=0,g=0,b=0)] * blank
