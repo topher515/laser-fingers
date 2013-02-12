@@ -4,7 +4,8 @@ laser-fingers
 Control lasers with your fingers!
 
 Much more documentation needed, but the command to get started is:
-`PYTHON_PATH=../Leap_SDK/lib/ python leaplaser.py`
+
+ `PYTHON_PATH=../Leap_SDK/lib/ python leaplaser.py`
 
 This assume that you have the Leap_SDK installed into the same directory where 
 you have cloned the `laser-fingers` repository.
