@@ -11,7 +11,7 @@ This assume that you have the Leap_SDK installed into the same directory where
 you have cloned the `laser-fingers` repository.
 
 
-See it in action: http://www.youtube.com/watch?v=ycSTcyXQ0cA
+See it in action: http://vimeo.com/59602627
 
 
 Brandon Thomas's super awesome Laser Asteroids game 
