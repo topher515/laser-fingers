@@ -2,6 +2,7 @@
 import dac
 from itertools import combinations
 import math
+import sys
 
 from leapyosc import client
 from leapyosc.client import (BaseLeapListener, RealPartTrackerMixin, 
@@ -472,17 +473,23 @@ class PointStreamingLeapListener(WaveStream,
 OSC = True
 
 
-def main():
+def main(args):
+
+
+    if len(args) == 0:
+        OSC = False
+    else:
+        OSC = True
+        hostname = args[0]
+        port = args[1]
+
 
     if OSC:
-        hostname='169.254.74.5'
-        port=6678
         listener = PointStreamingOSCLeapListener(hostname=hostname, port=port,
                     x_mm_min=-100, x_mm_max=100,
                     y_mm_min=100, y_mm_max=300)
 
     else:
-
         listener = PointStreamingLeapListener(x_mm_min=-100, x_mm_max=100,
                     y_mm_min=100, y_mm_max=300)
 
@@ -523,5 +530,5 @@ def asteroids_test():
 if __name__ == '__main__':
 
     #max_box()
-    main()
+    main(sys.argv[1:])
     #asteroids_test()
